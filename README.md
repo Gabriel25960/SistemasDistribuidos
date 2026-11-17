@@ -48,7 +48,48 @@ Para executar em máquinas diferentes, basta trocar `127.0.0.1` pelo IP real.
 - Falha de conexão ou timeout gera `IOException`, usada como detecção de falhas.
 
 ## 6. Proposta 1 – Berkeley
-(a preencher: descrição, mensagens, como executar, evidências)
+
+### 6.1 Funcionamento
+Rede de 5 processos independentes: 1 coordenador (id 0) e 4 participantes (ids 1 a 4).
+Cada um tem um **relógio simulado** = relógio real da máquina + deslocamento inicial (`--offset`, em ms),
+por isso todos começam com horários diferentes sem alterar o relógio do sistema operacional.
+
+1. **Consulta:** o coordenador envia `GET_TIME` a cada participante e mede o tempo de ida e volta (RTT).
+2. **Diferença:** para cada participante, `dif = relógio_informado − (relógio_do_coordenador_no_envio + RTT/2)`.
+   A compensação de RTT/2 reduz o erro causado pelo atraso da rede.
+3. **Média:** o coordenador calcula a média das diferenças, **incluindo ele próprio** (diferença 0).
+4. **Ajuste:** `ajuste_i = média − dif_i`. O coordenador envia o **ajuste (delta)**, e não um horário absoluto.
+5. **Aplicação:** cada participante recebe `ADJUST(delta)`, soma ao seu relógio e responde `ACK`. O coordenador aplica o próprio ajuste (`média`).
+6. **Verificação:** o coordenador consulta os relógios novamente e imprime a tabela antes/depois.
+
+Participantes que não respondem (3 tentativas) são excluídos da rodada.
+
+### 6.2 Mensagens
+| Mensagem | Origem → destino | Conteúdo | Resposta |
+|---|---|---|---|
+| `GET_TIME` | coordenador → participante | – | `TIME;time=<ms>` |
+| `ADJUST` | coordenador → participante | `delta=<ms>` | `ACK;time=<ms>` |
+
+### 6.3 Como executar (cada processo em um terminal separado)
+```
+java -cp out berkeley.Participant --id 1 --offset 30000
+java -cp out berkeley.Participant --id 2 --offset -45000
+java -cp out berkeley.Participant --id 3 --offset 12000
+java -cp out berkeley.Participant --id 4 --offset -8000
+java -cp out berkeley.Coordinator --offset 5000
+```
+Argumentos: `--id` (participante), `--offset` (deslocamento inicial em ms), `--config` (padrão `config/berkeley.properties`).
+Execução automática: `./scripts/run_berkeley.sh` (Linux/Mac) ou `scripts\run_berkeley.bat` (Windows).
+
+### 6.4 Resultado esperado
+Diferenças antes do ajuste (relativas ao coordenador): P1 ≈ +25000, P2 ≈ −50000, P3 ≈ +7000, P4 ≈ −13000 ms.
+Média ≈ −6200 ms. Após o ajuste, todos os relógios ficam iguais, com diferença residual de poucos milissegundos
+(atraso e precisão da rede, principalmente na primeira conexão).
+
+### 6.5 Observações
+- Os horários no prefixo `[HH:mm:ss.SSS]` dos logs são do relógio real da máquina. Os relógios simulados aparecem no texto das mensagens.
+- O ajuste é aplicado diretamente ao valor do relógio simulado. Em um sistema real, um ajuste negativo seria feito desacelerando o relógio para que ele nunca volte no tempo.
+- Não há descarte de relógios discrepantes (outliers), pois não é exigido pelo enunciado.
 
 ## 7. Proposta 2 – Eleição em Anel (Chang-Roberts)
 (a preencher: descrição, mensagens, como executar, evidências)
